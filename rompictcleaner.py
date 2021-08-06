@@ -17,7 +17,7 @@ __author__  = "pablo33"
     '''
 
 # Standard libray imports
-import os, argparse, sqlite3
+import os, argparse, sqlite3, shutil
 
 # Error classes
 class NotStringError(ValueError):
@@ -62,9 +62,11 @@ def printlist (mylist):
 
 # Defaults:
 romfolder	= "roms"
-biosfolder	= "bios"
+biosfolder	= None
 snapfolder	= "snap"
 dbpath		= "romsDB.sqlite"
+
+snap_mv 	= "no_rom_snap"	# foder where no matching pictures goes.
 
 # main
 if __name__ == '__main__':
@@ -75,7 +77,7 @@ if __name__ == '__main__':
 
 	parser.add_argument("-r", "--roms", default=romfolder,
 						help="rom folder path")
-	parser.add_argument("-b", "--bios",
+	parser.add_argument("-b", "--bios", default=biosfolder,
 						help="bios folder path")
 	parser.add_argument("-s", "--snap", default=snapfolder,
 						help="snapshots picture folder path")
@@ -85,7 +87,8 @@ if __name__ == '__main__':
 	# adding ending slashes to pahts
 	romfolder = addslash(args.roms)
 	snapfolder = addslash(args.snap)
-	biosfolder = addslash(args.bios)
+	if (args.bios):
+		biosfolder = addslash(args.bios)
 
 	# Checking parameters
 	errorlist 	= []
@@ -94,6 +97,7 @@ if __name__ == '__main__':
 		errorlist.append ("error in rom parameter:(--rom {}), folder does not exist.".format(romfolder,))
 	if itemcheck(snapfolder) 	!= "folder":
 		errorlist.append ("error in snapshot parameter: (--snap {}),  folder does not exist.".format(snapfolder))
+	print (biosfolder)
 	if biosfolder == None:
 		warninglist.append ("no bios folder has been defined.")
 	elif itemcheck(biosfolder) 	!= "folder":
@@ -119,28 +123,130 @@ if __name__ == '__main__':
 	cursor = con.cursor() # object to manage queries
 
 	cursor.execute ('CREATE TABLE roms (\
-		ID INT PRIMARY KEY NOT NULL,\
-		Fullfilepath char NOT NULL ,\
-		Filename char NOT NULL ,\
+		Romname char NOT NULL ,\
 		Fileext char\
 		)')
 
 	cursor.execute ('CREATE TABLE snap (\
-		ID INT PRIMARY KEY NOT NULL,\
-		Fullfilepath char NOT NULL ,\
 		Pictname char NOT NULL ,\
 		Fileext char\
 		)')
 
 	cursor.execute ('CREATE TABLE bios (\
-		ID INT PRIMARY KEY NOT NULL,\
-		Fullfilepath char NOT NULL ,\
 		Biosname char NOT NULL ,\
-		Biosext char\
+		Fileext char\
 		)')
 
 	con.commit()
 
+	########################################
+	# Populating DB
+	########################################
+
+	ficheros = os.listdir(romfolder)
+	for i in ficheros:
+		if itemcheck (os.path.join(romfolder,i)) == "file":
+			data = os.path.splitext(os.path.basename(i))
+			con.execute ("INSERT INTO ROMS (Romname, Fileext) VALUES (?,?)", data) 		
+
+	ficheros = os.listdir(snapfolder)
+	for i in ficheros:
+		if itemcheck (os.path.join(snapfolder,i)) == "file":
+			data = os.path.splitext(os.path.basename(i))
+			con.execute ("INSERT INTO SNAP (Pictname, Fileext) VALUES (?,?)", data) 		
+
+	if biosfolder:
+		ficheros = os.listdir(biosfolder)
+		for i in ficheros:
+			if itemcheck (os.path.join(biosfolder,i)) == "file":
+				data = os.path.splitext(os.path.basename(i))
+				con.execute ("INSERT INTO BIOS (Biosname, Fileext) VALUES (?,?)", data) 		
+
+	con.commit()
+
+	########################################
+	# Showing results and asking user
+	########################################
+
+	# number of pictures matching roms:
+	# SELECT Pictname,Fileext FROM snap where lower(snap.Pictname) in (SELECT lower(Romname) from roms) order by Pictname
+
+	# number of pictures that does not matches roms
+	# SELECT Pictname,Fileext FROM snap where lower(snap.Pictname) not in (SELECT lower(Romname) from roms) order by Pictname
+
+	# number of bios found
+	# SELECT count(*) from bios
+
+	# number of bios found on roms folder
+	# SELECT Romname, lower(Fileext) from roms WHERE lower(Romname) in (SELECT lower(Biosname) from bios)
+
+	Messages = []
+	text = "Number of pictures found:"
+	value = con.execute ("SELECT count(*) from snap").fetchone()[0]
+	Messages.append ((text, value),)
+
+	text = "Number of pictures that matches roms:"
+	value = con.execute ("SELECT count(Pictname) FROM snap where lower(snap.Pictname) in (SELECT lower(Romname) from roms) order by Pictname").fetchone()[0]
+	Messages.append ((text, value),)
+
+	text = "Number of pictures to move:"
+	value_pic = con.execute ("SELECT count(Pictname) FROM snap where lower(snap.Pictname) not in (SELECT lower(Romname) from roms) order by Pictname").fetchone()[0]
+	Messages.append ((text, value_pic),)
+
+	if biosfolder:
+		text = "Number of bios found:"
+		value = con.execute ("SELECT count(*) from bios").fetchone()[0]
+		Messages.append ((text, value),)
+
+		text = "Number of bios found on roms folder:"
+		value = con.execute ("SELECT count(Romname) from roms WHERE lower(Romname) in (SELECT lower(Biosname) from bios)").fetchone()[0]
+		Messages.append ((text, value),)
+
+	for m in Messages:
+		print (m[0], m[1])
+
+	r = input ("Want to proceed? (y/n):")
+	if r in ("nN"):
+		exit()
+
+	########################################
+	# Processing files
+	########################################
+
+	# BIOS
+	# Delete Bios on rom folder
+	if biosfolder:
+		cursor = con.execute ("SELECT lower(Romname), lower(Fileext) from roms WHERE lower(Romname) in (SELECT lower(Biosname) from bios)")
+		for b in cursor:
+			file = os.path.join(romfolder, b[0]+b[1])
+			print ("deleting: ", file, end=" > ")
+			os.remove (file)
+			print ("OK!")
+
+	# PICT
+	# Moving not matching pictures
+	if value_pic > 0:
+		mvpath = os.path.join(snapfolder,snap_mv)
+		if itemcheck (mvpath) != "folder":
+			os.makedirs (mvpath)
+		cursor = con.execute ("SELECT Pictname,Fileext FROM snap where lower(snap.Pictname) not in (SELECT lower(Romname) from roms) order by Pictname")
+		for p in cursor:
+			file = os.path.join(snapfolder, p[0]+p[1])
+			mvfile = os.path.join(mvpath,p[0]+p[1])
+			print ("moving file: ", file, end=" > ")
+			shutil.move (file, mvfile)
+			print ("OK!")
+
+	# PICT
+	# Renaming Pictures to lowercase
+
+
+	# ROMS
+	# Renaming Roms to lowercase
+
+
+
+
+
+
 print ("Done!")
-
-
