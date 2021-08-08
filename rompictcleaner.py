@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- encoding: utf-8 -*-
 
-__version__ = "0.0"
+__version__ = "0.1"
 __author__  = "pablo33"
 
 '''
@@ -216,37 +216,60 @@ if __name__ == '__main__':
 	# BIOS
 	# Delete Bios on rom folder
 	if biosfolder:
-		cursor = con.execute ("SELECT lower(Romname), lower(Fileext) from roms WHERE lower(Romname) in (SELECT lower(Biosname) from bios)")
+		print ("\tDeleting Bios on Rom folder")
+		cursor = con.execute ("SELECT Romname||Fileext from roms WHERE lower(Romname) in (SELECT lower(Biosname) from bios)")
 		for b in cursor:
-			file = os.path.join(romfolder, b[0]+b[1])
+			file = os.path.join(romfolder, b[0])
 			print ("deleting: ", file, end=" > ")
 			os.remove (file)
 			print ("OK!")
 
 	# PICT
 	# Moving not matching pictures
+	print ("\tMoving not matching pictures.")
 	if value_pic > 0:
 		mvpath = os.path.join(snapfolder,snap_mv)
 		if itemcheck (mvpath) != "folder":
 			os.makedirs (mvpath)
-		cursor = con.execute ("SELECT Pictname,Fileext FROM snap where lower(snap.Pictname) not in (SELECT lower(Romname) from roms) order by Pictname")
+		cursor = con.execute ("SELECT Pictname||Fileext FROM snap where lower(snap.Pictname) not in (SELECT lower(Romname) from roms) order by Pictname")
 		for p in cursor:
-			file = os.path.join(snapfolder, p[0]+p[1])
-			mvfile = os.path.join(mvpath,p[0]+p[1])
+			file = os.path.join(snapfolder, p[0])
+			mvfile = os.path.join(mvpath,p[0])
 			print ("moving file: ", file, end=" > ")
 			shutil.move (file, mvfile)
 			print ("OK!")
 
-	# PICT
-	# Renaming Pictures to lowercase
+	# Renaming files to lowercase
+	Data = (
+		{'name':"Pictures",	'table':"snap", 'field':"Pictname",	'folder':snapfolder},
+		{'name':"Roms",		'table':"roms", 'field':"Romname",	'folder':romfolder},
+		{'name':"Bios",		'table':"bios",	'field':"Biosname",	'folder':biosfolder},
+	)
+
+	for i in Data:
+		upperelements = con.execute (f"SELECT COUNT({i['field']}||Fileext) FROM \
+					{i['table']} WHERE\
+					lower({i['field']})||lower(Fileext) != {i['field']}||Fileext").fetchone()[0]
+		if upperelements > 0:
+			print (f"\tRenaming {i['name']} to lowercase")
+			cursor = con.execute (f"SELECT {i['field']}||Fileext AS origin, lower({i['field']}||Fileext) AS dest \
+					FROM {i['table']} WHERE\
+					lower({i['field']})||lower(Fileext) != {i['field']}||Fileext")
+			for m in cursor:
+				origin = os.path.join(i['folder'], m[0])
+				dest = os.path.join(i['folder'],m[1])
+				print ("renaming file: ", origin, " > ", dest, " : ", end=" > ")
+				if itemcheck (origin) != "file":
+					print ("origin file does not exist. Doing notthing", end=" > ")
+				elif itemcheck (dest) == "file":
+					print ("forcing renaming origin file", end=" > ")
+					shutil.move (origin, origin+".tmp")
+					shutil.move (origin+".tmp", dest)
+				else:
+					shutil.move (origin, dest)
+				print ("OK!")
 
 
-	# ROMS
-	# Renaming Roms to lowercase
-
-
-
-
-
+con.close()
 
 print ("Done!")

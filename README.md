@@ -20,14 +20,13 @@ The software will:
   * separate bios from roms folder
   * rename all files to lowercase
 
-How to separate bios from roms: by matching a bios folder.  
+You need a separate folder with bios files. The software will match these bios on roms folder an will delete them. After refreshing your lists in MALA, you will want to copy the bios files again among the roms files.
 
-And here I go again.
 
 ## Input parameters on command line
-* roms folder ("roms" by default) --rom
-* snapshot folder ("snap" by default) --snap
-* bios folder ("bios" by default) --bios
+* roms folder ("roms" by default) --rom , -r
+* snapshot folder ("snap" by default) --snap , -s
+* bios folder ("bios" by default) --bios  ,  -b
 
 Input example:
 rompictcleaner --rom roms/ --snap snap/ --bios bios/
